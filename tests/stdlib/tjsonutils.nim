@@ -1,4 +1,5 @@
 discard """
+  matrix: "--mm:refc; --mm:orc"
   targets: "c cpp js"
 """
 
@@ -7,13 +8,14 @@ import std/json
 from std/math import isNaN, signbit
 from std/fenv import epsilon
 from stdtest/testutils import whenRuntimeJs
+import std/[assertions, objectdollar]
 
 proc testRoundtrip[T](t: T, expected: string) =
   # checks that `T => json => T2 => json2` is such that json2 = json
   let j = t.toJson
   doAssert $j == expected, "\n" & $j & "\n" & expected
   doAssert j.jsonTo(T).toJson == j
-  var t2: T
+  var t2: T = default(T)
   t2.fromJson(j)
   doAssert t2.toJson == j
 
@@ -59,8 +61,7 @@ template fn() =
         testRoundtrip(pointer(nil)): """0"""
         testRoundtrip(cast[pointer](nil)): """0"""
 
-    # causes workaround in `fromJson` potentially related to
-    # https://github.com/nim-lang/Nim/issues/12282
+    # refs bug #9423
     testRoundtrip(Foo(1.5)): """1.5"""
 
   block: # OrderedTable
@@ -70,7 +71,7 @@ template fn() =
     testRoundtrip({"z": (f1: 'f'), }.toTable): """{"z":{"f1":102}}"""
 
   block: # StringTable
-    testRoundtrip({"name": "John", "city": "Monaco"}.newStringTable): """{"mode":"modeCaseSensitive","table":{"city":"Monaco","name":"John"}}"""
+    testRoundtrip({"name": "John", "city": "Monaco"}.newStringTable): """{"mode":"modeCaseSensitive","table":{"name":"John","city":"Monaco"}}"""
 
   block: # complex example
     let t = {"z": "Z", "y": "Y"}.newStringTable
@@ -78,7 +79,7 @@ template fn() =
       a1: string
     let a = (1.1, "fo", 'x', @[10,11], [true, false], [t,newStringTable()], [0'i8,3'i8], -4'i16, (foo: 0.5'f32, bar: A(a1: "abc"), bar2: A.default, cstring1: "foo", cstring2: "", cstring3: cstring(nil)))
     testRoundtrip(a):
-      """[1.1,"fo",120,[10,11],[true,false],[{"mode":"modeCaseSensitive","table":{"y":"Y","z":"Z"}},{"mode":"modeCaseSensitive","table":{}}],[0,3],-4,{"foo":0.5,"bar":{"a1":"abc"},"bar2":null,"cstring1":"foo","cstring2":"","cstring3":null}]"""
+      """[1.1,"fo",120,[10,11],[true,false],[{"mode":"modeCaseSensitive","table":{"z":"Z","y":"Y"}},{"mode":"modeCaseSensitive","table":{}}],[0,3],-4,{"foo":0.5,"bar":{"a1":"abc"},"bar2":null,"cstring1":"foo","cstring2":"","cstring3":null}]"""
 
   block:
     # edge case when user defined `==` doesn't handle `nil` well, e.g.:
@@ -204,6 +205,19 @@ template fn() =
     testRoundtrip(Foo[int](x0: 1.5, t1: false, z2: 6)): """{"x0":1.5,"t1":false,"z2":6,"x1":""}"""
     # sanity check: nesting inside a tuple
     testRoundtrip((Foo[int](x0: 1.5, t1: false, z2: 6), "foo")): """[{"x0":1.5,"t1":false,"z2":6,"x1":""},"foo"]"""
+
+  block: # generic case object using generic type
+    type Foo[T] = ref object
+      x0: float
+      case t1: bool
+      of true: z1: int8
+      of false: z2: uint16
+      x1: string
+      x2: T
+    testRoundtrip(Foo[float](t1: true, z1: 5, x1: "bar", x2: 2.5)): """{"x0":0.0,"t1":true,"z1":5,"x1":"bar","x2":2.5}"""
+    testRoundtrip(Foo[int](x0: 1.5, t1: false, z2: 6, x2: 2)): """{"x0":1.5,"t1":false,"z2":6,"x1":"","x2":2}"""
+    # sanity check: nesting inside a tuple
+    testRoundtrip((Foo[int](x0: 1.5, t1: false, z2: 6, x2: 2), "foo")): """[{"x0":1.5,"t1":false,"z2":6,"x1":"","x2":2},"foo"]"""
 
   block: # case object: 2 discriminants, `when` branch, range discriminant
     type Foo[T] = object
@@ -408,6 +422,45 @@ template fn() =
       doAssert foo.f == 3.14159
       doAssert foo.c == 0
       doAssert foo.c0 == 42
+
+
+    block testInvalidTupleLength:
+      let json = parseJson("[0]")
+      # Should raise ValueError instead of index error
+      doAssertRaises(ValueError):
+        discard json.jsonTo((int, int))
+
+    type
+      InnerEnum = enum
+        A
+        B
+        C
+      InnerObject = object
+        x: string
+        y: InnerEnum
+
+    block testOptionsArePassedWhenDeserialising:
+      let json = parseJson("""{"x": "hello"}""")
+      let inner = json.jsonTo(Option[InnerObject], Joptions(allowMissingKeys: true))
+      doAssert inner.isSome()
+      doAssert inner.get().x == "hello"
+      doAssert inner.get().y == A
+
+    block testOptionsArePassedWhenSerialising:
+      let inner = some InnerObject(x: "hello", y: A)
+      let json = inner.toJson(ToJsonOptions(enumMode: joptEnumSymbol))
+      doAssert $json == """{"x":"hello","y":"A"}"""
+
+    block arrayTypeCheck:
+      let json = """{"key": "value"}""".parseJson()
+      var output: seq[int]
+      doAssertRaises(ValueError):
+        output.fromJson(json)
+
+    block: # bug #21638
+      type Something = object
+
+      doAssert "{}".parseJson.jsonTo(Something) == Something()
 
     when false:
       ## TODO: Implement support for nested variant objects allowing the tests

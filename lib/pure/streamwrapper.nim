@@ -11,7 +11,7 @@
 ##
 ## **Since** version 1.2.
 
-import deques, streams
+import std/[deques, streams]
 
 when defined(nimPreviewSlimSystem):
   import std/assertions
@@ -64,7 +64,8 @@ proc posReadData[T](s: Stream, buffer: pointer, bufLen: int): int =
     result += s.baseReadDataImpl(s, addr dest[n], bufLen - n)
 
 proc posReadDataStr[T](s: Stream, buffer: var string, slice: Slice[int]): int =
-  posReadData[T](s, addr buffer[slice.a], slice.len)
+  result = posReadData[T](s, beginStore(buffer, buffer.len, slice.a), slice.len)
+  endStore(buffer)
 
 proc posPeekData[T](s: Stream, buffer: pointer, bufLen: int): int =
   var s = PipeOutStream[T](s)
@@ -91,21 +92,22 @@ proc newPipeOutStream*[T](s: sink (ref T)): owned PipeOutStream[T] =
   ## when setPosition/getPosition is called or write operation is performed.
   ##
   ## Example:
-  ##
-  ## .. code-block:: Nim
+  ##   ```Nim
   ##   import std/[osproc, streamwrapper]
   ##   var
   ##     p = startProcess(exePath)
   ##     outStream = p.outputStream().newPipeOutStream()
   ##   echo outStream.peekChar
   ##   p.close()
+  ##   ```
 
   assert s.readDataImpl != nil
 
   new(result)
   for dest, src in fields((ref T)(result)[], s[]):
     dest = src
-  wasMoved(s[])
+  {.cast(raises: []), cast(tags: []).}:
+    wasMoved(s[])
   if result.readLineImpl != nil:
     result.baseReadLineImpl = result.readLineImpl
     result.readLineImpl = posReadLine[T]

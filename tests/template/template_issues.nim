@@ -13,6 +13,7 @@ foo
 foo
 false
 true
+0
 '''
 """
 
@@ -296,3 +297,21 @@ block: # bug #12595
     discard {i: ""}
 
   test()
+
+block: # bug #21920
+  template t[T](): T =
+    discard
+
+  t[void]() # Error: expression has no type: discard
+
+template m(a: uint, p: int) = discard
+
+block: # bug #23680
+  template m(x: untyped, i: int) = echo x
+  proc j(n: int | int) = m([0][0], 0)
+  j(0)
+
+block: # bug #22881
+  template test[I, T](a: array[I, T]) =
+    static: doAssert $typeof(a) == "array[1..2, int]"
+  test([1: 4, 2: 5])

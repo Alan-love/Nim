@@ -8,6 +8,8 @@ impl 2 called
 asd
 Foo
 Bar
+Seq works
+seq works
 '''
 joinable: false
 """
@@ -157,3 +159,19 @@ block t3338:
   var t2 = Bar[int32]()
   t2.add()
   doAssert t2.x == 5
+
+block: # issue #24203
+  proc b(G: typedesc) =
+    type U = G
+  template s(h: untyped) = h
+  s(b(typeof (0, 0)))
+  b(seq[int])
+  b((int, int))
+  b(typeof (0, 0))
+
+block: # bug #19170
+  type Seq[U] = seq[U]
+  proc foo(s: typedesc[seq]) = echo "seq works"
+  proc foo(s: typedesc[Seq]) = echo "Seq works"
+  Seq.foo
+  seq.foo

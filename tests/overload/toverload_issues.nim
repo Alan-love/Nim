@@ -77,27 +77,30 @@ testPred(1)
 
 
 
-# bug #6526
-type
-  BaseObj = ref object of RootObj
-  DerivedObj = ref object of BaseObj
-  OtherDerivate = ref object of BaseObj
+block: # bug #6526
+  type
+    BaseObj = ref object of RootObj
+    DerivedObj = ref object of BaseObj
+    OtherDerivate = ref object of BaseObj
 
-proc `==`*[T1, T2: BaseObj](a: T1, b: T2): bool =
-  echo "baseobj =="
-  return true
+  proc p[T](a: T, b: T): bool =
+    assert false
 
-let a = DerivedObj()
-let b = DerivedObj()
-echo a == b
+  proc p[T1, T2: BaseObj](a: T1, b: T2): bool =
+    echo "baseobj =="
+    return true
 
-proc `==`*[T1, T2: OtherDerivate](a: T1, b: T2): bool =
-  echo "even better! =="
-  return true
+  let a = DerivedObj()
+  let b = DerivedObj()
+  echo p(a,b)
 
-let a2 = OtherDerivate()
-let b2 = OtherDerivate()
-echo a2 == b2
+  proc p[T1, T2: OtherDerivate](a: T1, b: T2): bool =
+    echo "even better! =="
+    return true
+
+  let a2 = OtherDerivate()
+  let b2 = OtherDerivate()
+  echo p(a2, b2)
 
 
 
@@ -195,3 +198,27 @@ doAssert foo(@[1,2,3]) == "foo: seq[int]"
 doAssert foo(@["WER"]) == "foo: seq[T]"
 doAssert foo(MySeq[int]()) == "foo: MySeq[int]"
 doAssert foo(MySeq[string]()) == "foo: MySeq[T]"
+
+block: # bug #13549
+  proc foo[T](x: T): string = "a"
+  proc foo[T: tuple](x: T): string = "b"
+  doAssert foo((1, 2, 3)) == "b"
+  type Obj = object
+  proc foo(x: object): string = "c"
+  doAssert foo(Obj()) == "c"
+
+import options, streams
+
+block: # bug #16321
+  proc storeBin(s: Stream; x: bool) =
+    write(s, $x)
+  proc storeBin[T](s: Stream; o: Option[T]) =
+    let isSome = isSome(o)
+    storeBin(s, isSome)
+    if isSome:
+      storeBin(s, get(o))
+  proc storeBin[T: object|tuple](s: Stream; o: T) =
+    write(s, "bug")
+  var s = newStringStream()
+  s.storeBin(none(bool))
+  doAssert s.data == "false"

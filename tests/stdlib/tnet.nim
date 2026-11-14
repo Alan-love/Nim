@@ -1,9 +1,11 @@
 discard """
+matrix: "--mm:refc; --mm:orc"
 outputsub: ""
 """
 
 import net, nativesockets
 import unittest
+import std/assertions
 
 block: # isIpAddress tests
   block: # 127.0.0.1 is valid
@@ -50,6 +52,20 @@ block: # parseIpAddress tests
     expect(ValueError):
       discard parseIpAddress("gggg:cdba:0000:0000:0000:0000:3257:9652")
 
+  block: # ipv6 groups with more than 4 hex digits (bug #26647)
+    discard parseIpAddress("0000::1")
+    discard parseIpAddress("ffff:2:3:4:5:6:7:8")
+    check isIpAddress("0001::1") == true
+    check isIpAddress("00001::1") == false
+    expect(ValueError):
+      discard parseIpAddress("00001::1")
+    expect(ValueError):
+      discard parseIpAddress("000000000000000000001::2")
+    expect(ValueError):
+      discard parseIpAddress("fffff::1")
+    expect(ValueError):
+      discard parseIpAddress("1:2:3:4:5:6:7:0000f")
+
   block: # ipv4-compatible ipv6 address (embedded ipv4 address)
     check parseIpAddress("::ffff:10.0.0.23") == parseIpAddress("::ffff:0a00:0017")
 
@@ -85,6 +101,11 @@ block: # parseIpAddress tests
     expect(ValueError):
       discard parseIpAddress("::ffff:127.0.1")
 
+block: # `$` for IPv6 does not compress a single zero group (bug #26658)
+  check $parseIpAddress("1:0:2:3:4:5:6:7") == "1:0:2:3:4:5:6:7"
+  check $parseIpAddress("1:0:0:2:0:0:0:3") == "1:0:0:2::3"
+  check $parseIpAddress("0:0:0:0:0:0:0:1") == "::1"
+
 block: # "IpAddress/Sockaddr conversion"
   proc test(ipaddrstr: string) =
     var ipaddr_1 = parseIpAddress(ipaddrstr)
@@ -92,10 +113,10 @@ block: # "IpAddress/Sockaddr conversion"
 
     doAssert($ipaddrstr == $ipaddr_1)
 
-    var sockaddr: Sockaddr_storage
-    var socklen: SockLen
-    var ipaddr_2: IpAddress
-    var port_2: Port
+    var sockaddr: Sockaddr_storage = default(Sockaddr_storage)
+    var socklen: SockLen = default(SockLen)
+    var ipaddr_2: IpAddress = default(IpAddress)
+    var port_2: Port = default(Port)
 
     toSockAddr(ipaddr_1, Port(0), sockaddr, socklen)
     fromSockAddr(sockaddr, socklen, ipaddr_2, port_2)
@@ -106,11 +127,11 @@ block: # "IpAddress/Sockaddr conversion"
     doAssert($ipaddr_1 == $ipaddr_2)
 
     if sockaddr.ss_family.cint == AF_INET.toInt:
-      var sockaddr4: Sockaddr_in
+      var sockaddr4: Sockaddr_in = default(Sockaddr_in)
       copyMem(addr sockaddr4, addr sockaddr, sizeof(sockaddr4))
       fromSockAddr(sockaddr4, socklen, ipaddr_2, port_2)
     elif sockaddr.ss_family.cint == AF_INET6.toInt:
-      var sockaddr6: Sockaddr_in6
+      var sockaddr6: Sockaddr_in6 = default(Sockaddr_in6)
       copyMem(addr sockaddr6, addr sockaddr, sizeof(sockaddr6))
       fromSockAddr(sockaddr6, socklen, ipaddr_2, port_2)
 

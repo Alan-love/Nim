@@ -16,9 +16,9 @@ type
 
 proc c_str(a: stdString): cstring {.importcpp: "(char *)(#.c_str())", header: "<string>".}
 
-proc len(a: stdString): csize {.importcpp: "(#.length())", header: "<string>".}
+proc len(a: stdString): csize_t {.importcpp: "(#.length())", header: "<string>".}
 
-proc setChar(a: var stdString, i: csize, c: char) {.importcpp: "(#[#] = #)", header: "<string>".}
+proc setChar(a: var stdString, i: csize_t, c: char) {.importcpp: "(#[#] = #)", header: "<string>".}
 
 proc `*`*[T](this: stdUniquePtr[T]): var T {.noSideEffect, importcpp: "(* #)", header: "<memory>".}
 
@@ -37,3 +37,11 @@ var val = make_unique_str("test1")
 echo val.c_str()
 val.setChar(0, 'x')
 echo val.c_str()
+
+block: # bug #25870
+  proc testVarRet(x: var int): var int = x
+  proc testProcTypeParam(prc: proc (x: var int): var int {.nimcall.}) =
+    var x = 123
+    prc(x) = 321
+    doAssert x == 321
+  testProcTypeParam(testVarRet)
